@@ -60,8 +60,59 @@ const SandMeScanPage: React.FC = () => {
         ]);
         lines.push(new THREE.Line(tLine, lineMaterial));
 
+
         // Dodaj linije u scenu
         lines.forEach(line => scene.add(line));
+
+        // --- Teniska mreža sa stubovima (ispravno orijentisana) ---
+        // Pozicija mreže: y od -130 do 130, x = 0
+        const netLength = 260; // 130*2
+        const netHeight = 40;
+        const netX = 0;
+        const netZ = 5; // malo iznad linija
+
+        // Stubovi (na krajevima mreže, vertikalno)
+        const postRadius = 4;
+        const postHeight = netHeight + 10;
+        const postGeometry = new THREE.CylinderGeometry(postRadius, postRadius, postHeight, 16);
+        const postMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const leftPost = new THREE.Mesh(postGeometry, postMaterial);
+        leftPost.position.set(netX, -130, netZ+20);
+        leftPost.rotation.x = Math.PI / 2; // uspravno
+        const rightPost = new THREE.Mesh(postGeometry, postMaterial);
+        rightPost.position.set(netX, 130, netZ+20);
+        rightPost.rotation.x = Math.PI / 2; // uspravno
+        scene.add(leftPost);
+        scene.add(rightPost);
+
+        // Mreža (pravougaona površina sa providnošću), rotirana za 90 stepeni oko X ose
+        const netGeometry = new THREE.PlaneGeometry(netLength, netHeight, 18, 6);
+        const netMaterial = new THREE.MeshBasicMaterial({ color: 0x222222, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
+        const netMesh = new THREE.Mesh(netGeometry, netMaterial);
+        netMesh.position.set(netX, 0, netHeight / 2 + netZ);
+        netMesh.rotation.x = Math.PI / 2; // 90 stepeni oko X ose (vertikalno)
+        netMesh.rotation.y = Math.PI / 2; // 90 stepeni oko y ose (vertikalno)
+        scene.add(netMesh);
+
+        // Dodaj "linije" na mreži (imitacija žica)
+        const netLineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, opacity: 0.7, transparent: true });
+        // Vertikalne žice (duž mreže, po y osi)
+        for (let i = -130; i <= 130; i += 15) {
+            const vertGeom = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(netX, i, netZ),
+                new THREE.Vector3(netX, i, netZ + netHeight)
+            ]);
+            scene.add(new THREE.Line(vertGeom, netLineMaterial));
+        }
+        // Horizontalne žice (po visini mreže, po z osi)
+        for (let j = 0; j <= netHeight; j += 8) {
+            const z = netZ + j;
+            const horizGeom = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(netX, -130, z),
+                new THREE.Vector3(netX, 130, z)
+            ]);
+            scene.add(new THREE.Line(horizGeom, netLineMaterial));
+        }
 
 
         const renderer = new THREE.WebGLRenderer({ antialias: true });
