@@ -265,6 +265,13 @@ const menuTree: Array<MenuEntry | MenuSubEntry | MenuSubheader> = [
     },
     {
         kind: "MenuEntry",
+        route: "/hello",
+        title: "Sand Me Scan",
+        menuIcon: HelpIcon,
+        menuText: "Sand Me Scan"
+    },
+    {
+        kind: "MenuEntry",
         route: "/valetudo/about",
         title: "About Valetudo",
         menuIcon: AboutIcon,

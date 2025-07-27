@@ -1,6 +1,7 @@
 import {HashRouter, Navigate, Route, Routes} from "react-router-dom";
 import Div100vh from "react-div-100vh";
 import HomePage from "./HomePage";
+import SandMeScanPage from "./components/SandMeScanPage";
 import OptionsRouter from "./options";
 import {PaletteMode, styled} from "@mui/material";
 import RobotRouter from "./robot";
@@ -36,6 +37,7 @@ const AppRouter: React.FunctionComponent<{ paletteMode: PaletteMode, setPaletteM
                         <Route path="robot/*" element={<RobotRouter />} />
                         <Route path="options/*" element={<OptionsRouter />} />
                         <Route path="valetudo/*" element={<ValetudoRouter />} />
+                        <Route path="hello" element={<SandMeScanPage />} />
                         <Route path="*" element={<Navigate to="/" />} />
                     </Routes>
                 </Content>
