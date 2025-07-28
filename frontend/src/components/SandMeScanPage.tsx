@@ -14,8 +14,10 @@ const SandMeScanPage: React.FC = () => {
         camera.position.set(0, 0, 1200);
         camera.lookAt(0, 0, 0);
 
-        // Narandžasti pravougaonik (teren)
-        const fieldGeometry = new THREE.PlaneGeometry(540, 260);
+        // Narandžasti pravougaonik (teren) - povećan za 10% u svim pravcima
+        const fieldWidth = 540 * 1.1; // 594
+        const fieldHeight = 260 * 1.1; // 286
+        const fieldGeometry = new THREE.PlaneGeometry(fieldWidth, fieldHeight);
         const fieldMaterial = new THREE.MeshBasicMaterial({ color: 0xffa500 });
         const field = new THREE.Mesh(fieldGeometry, fieldMaterial);
         scene.add(field);
@@ -128,7 +130,7 @@ const SandMeScanPage: React.FC = () => {
             const delta = event.deltaY;
             // Ograniči zoom
             let newZ = camera.position.z + delta * zoomSpeed;
-            newZ = Math.max(400, Math.min(2500, newZ));
+            newZ = Math.max(400, Math.min(5000, newZ));
             camera.position.z = newZ;
         };
         canvas.addEventListener("wheel", onWheel, { passive: false });
@@ -142,11 +144,13 @@ const SandMeScanPage: React.FC = () => {
         let isDragging = false;
         let previousX = 0;
         let previousY = 0;
+        let dragButton = 0; // 0: none, 1: left, 2: right
 
         const onMouseDown = (event: MouseEvent) => {
             isDragging = true;
             previousX = event.clientX;
             previousY = event.clientY;
+            dragButton = event.button;
         };
         const onMouseUp = () => {
             isDragging = false;
@@ -159,11 +163,19 @@ const SandMeScanPage: React.FC = () => {
             const deltaY = event.clientY - previousY;
             previousX = event.clientX;
             previousY = event.clientY;
-            // Rotiraj oko Y i X ose
-            scene.rotation.y += deltaX * 0.01;
-            scene.rotation.x += deltaY * 0.01;
+            if (dragButton === 0) {
+                // left mouse: Y/X
+                scene.rotation.y += deltaX * 0.01;
+                scene.rotation.x += deltaY * 0.01;
+            } else if (dragButton === 1) {
+                // middle mouse: translacija
+                scene.position.x += deltaX;
+                scene.position.y -= deltaY;
+            } else if (dragButton === 2) {
+                // right mouse: Z
+                scene.rotation.z += deltaX * 0.01;
+            }
         };
-
 
         canvas.addEventListener("mousedown", onMouseDown);
         window.addEventListener("mouseup", onMouseUp);
