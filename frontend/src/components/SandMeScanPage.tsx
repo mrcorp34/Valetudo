@@ -16,7 +16,7 @@ const SandMeScanPage: React.FC = () => {
 
         // Narandžasti pravougaonik (teren) - povećan za 10% u svim pravcima
         const fieldWidth = 540 * 1.1; // 594
-        const fieldHeight = 260 * 1.1; // 286
+        const fieldHeight = 360 * 1.1; // 286
         const fieldGeometry = new THREE.PlaneGeometry(fieldWidth, fieldHeight);
         const fieldMaterial = new THREE.MeshBasicMaterial({ color: 0xffa500 });
         const field = new THREE.Mesh(fieldGeometry, fieldMaterial);
@@ -26,15 +26,46 @@ const SandMeScanPage: React.FC = () => {
         const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 });
         const lines: THREE.Line[] = [];
 
-        // Spoljni okvir
+
+        // Spoljni okvir za singl (unutrašnji pravougaonik)
+        const singlesTop = 130;
+        const singlesBottom = -130;
+        const singlesLeft = -270;
+        const singlesRight = 270;
         const outerRect = new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(-270, -130, 1),
-            new THREE.Vector3(270, -130, 1),
-            new THREE.Vector3(270, 130, 1),
-            new THREE.Vector3(-270, 130, 1),
-            new THREE.Vector3(-270, -130, 1)
+            new THREE.Vector3(singlesLeft, singlesBottom, 1),
+            new THREE.Vector3(singlesRight, singlesBottom, 1),
+            new THREE.Vector3(singlesRight, singlesTop, 1),
+            new THREE.Vector3(singlesLeft, singlesTop, 1),
+            new THREE.Vector3(singlesLeft, singlesBottom, 1)
         ]);
         lines.push(new THREE.Line(outerRect, lineMaterial));
+
+        // Dubl linije (parovi) - proširenje po dužini terena
+        const doublesMargin = 47; // standardno proširenje za dubl (u px)
+        const doublesTop = singlesTop + doublesMargin;
+        const doublesBottom = singlesBottom - doublesMargin;
+        // Dubl okvir
+        const doublesRect = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(singlesLeft, doublesBottom, 1),
+            new THREE.Vector3(singlesRight, doublesBottom, 1),
+            new THREE.Vector3(singlesRight, doublesTop, 1),
+            new THREE.Vector3(singlesLeft, doublesTop, 1),
+            new THREE.Vector3(singlesLeft, doublesBottom, 1)
+        ]);
+        lines.push(new THREE.Line(doublesRect, lineMaterial));
+
+        // Dubl bočne linije (parovi) - horizontalne linije na krajevima dubl terena
+        const topDoublesLine = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(singlesLeft, doublesTop, 2),
+            new THREE.Vector3(singlesRight, doublesTop, 2)
+        ]);
+        lines.push(new THREE.Line(topDoublesLine, lineMaterial));
+        const bottomDoublesLine = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(singlesLeft, doublesBottom, 2),
+            new THREE.Vector3(singlesRight, doublesBottom, 2)
+        ]);
+        lines.push(new THREE.Line(bottomDoublesLine, lineMaterial));
 
         // Središnja linija
         const centerLine = new THREE.BufferGeometry().setFromPoints([
@@ -68,7 +99,7 @@ const SandMeScanPage: React.FC = () => {
 
         // --- Teniska mreža sa stubovima (ispravno orijentisana) ---
         // Pozicija mreže: y od -130 do 130, x = 0
-        const netLength = 260; // 130*2
+        const netLength = 360; // 130*2
         const netHeight = 40;
         const netX = 0;
         const netZ = 5; // malo iznad linija
@@ -79,10 +110,10 @@ const SandMeScanPage: React.FC = () => {
         const postGeometry = new THREE.CylinderGeometry(postRadius, postRadius, postHeight, 16);
         const postMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
         const leftPost = new THREE.Mesh(postGeometry, postMaterial);
-        leftPost.position.set(netX, -130, netZ+20);
+        leftPost.position.set(netX, -180, netZ+20);
         leftPost.rotation.x = Math.PI / 2; // uspravno
         const rightPost = new THREE.Mesh(postGeometry, postMaterial);
-        rightPost.position.set(netX, 130, netZ+20);
+        rightPost.position.set(netX, 180, netZ+20);
         rightPost.rotation.x = Math.PI / 2; // uspravno
         scene.add(leftPost);
         scene.add(rightPost);
@@ -99,7 +130,7 @@ const SandMeScanPage: React.FC = () => {
         // Dodaj "linije" na mreži (imitacija žica)
         const netLineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, opacity: 0.7, transparent: true });
         // Vertikalne žice (duž mreže, po y osi)
-        for (let i = -130; i <= 130; i += 15) {
+        for (let i = -180; i <= 180; i += 15) {
             const vertGeom = new THREE.BufferGeometry().setFromPoints([
                 new THREE.Vector3(netX, i, netZ),
                 new THREE.Vector3(netX, i, netZ + netHeight)
@@ -110,8 +141,8 @@ const SandMeScanPage: React.FC = () => {
         for (let j = 0; j <= netHeight; j += 8) {
             const z = netZ + j;
             const horizGeom = new THREE.BufferGeometry().setFromPoints([
-                new THREE.Vector3(netX, -130, z),
-                new THREE.Vector3(netX, 130, z)
+                new THREE.Vector3(netX, -180, z),
+                new THREE.Vector3(netX, 180, z)
             ]);
             scene.add(new THREE.Line(horizGeom, netLineMaterial));
         }
