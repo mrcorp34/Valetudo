@@ -1,8 +1,9 @@
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import * as THREE from "three";
 
 const SandMeScanPage: React.FC = () => {
     const mountRef = useRef<HTMLDivElement>(null);
+    const [showWave, setShowWave] = useState(false);
 
     useEffect(() => {
         const width = 900;
@@ -14,13 +15,67 @@ const SandMeScanPage: React.FC = () => {
         camera.position.set(0, 0, 1200);
         camera.lookAt(0, 0, 0);
 
-        // Narandžasti pravougaonik (teren) - povećan za 10% u svim pravcima
+        // Dimenzije terena
         const fieldWidth = 540 * 1.1; // 594
-        const fieldHeight = 360 * 1.1; // 286
-        const fieldGeometry = new THREE.PlaneGeometry(fieldWidth, fieldHeight);
-        const fieldMaterial = new THREE.MeshBasicMaterial({ color: 0xffa500 });
-        const field = new THREE.Mesh(fieldGeometry, fieldMaterial);
-        scene.add(field);
+        const fieldHeight = 360 * 1.1; // 396
+
+        let field: THREE.Mesh;
+        if (!showWave) {
+            // Klasičan narandžasti pravougaonik
+            const fieldGeometry = new THREE.PlaneGeometry(fieldWidth, fieldHeight);
+            const fieldMaterial = new THREE.MeshBasicMaterial({ color: 0xffa500 });
+            field = new THREE.Mesh(fieldGeometry, fieldMaterial);
+            scene.add(field);
+        } else {
+            // Talasasta površina (sinusoidna) sa bojom po visini
+            const segmentsW = 60;
+            const segmentsH = 30;
+            const geometry = new THREE.PlaneGeometry(fieldWidth, fieldHeight, segmentsW, segmentsH);
+            // +-3% od visine kao amplitude
+            const amplitude = fieldHeight * 0.03;
+            // Pripremi array za boje
+            const colors = [];
+            let minZ = Infinity, maxZ = -Infinity;
+            // Prvo izračunaj sve Z i pronađi min/max
+            for (let i = 0; i < geometry.attributes.position.count; i++) {
+                const x = geometry.attributes.position.getX(i);
+                const y = geometry.attributes.position.getY(i);
+                const z = Math.sin(x / 60) * Math.cos(y / 60) * amplitude;
+                geometry.attributes.position.setZ(i, z);
+                if (z < minZ) { minZ = z; }
+                if (z > maxZ) { maxZ = z; }
+            }
+            // Sada dodeli boje po visini
+            for (let i = 0; i < geometry.attributes.position.count; i++) {
+                const z = geometry.attributes.position.getZ(i);
+                // Normalizuj z u [0,1]
+                const t = (z - minZ) / (maxZ - minZ);
+                // Svetlija narandžasta za visoke, tamnija za niske
+                // npr. od #b35c00 (tamno) do #fff2cc (svetlo)
+                // Interpolacija RGB
+                const low = { r: 179/255, g: 92/255, b: 0 };
+                const high = { r: 1, g: 0.95, b: 0.8 };
+                const r = low.r + (high.r - low.r) * t;
+                const g = low.g + (high.g - low.g) * t;
+                const b = low.b + (high.b - low.b) * t;
+                colors.push(r, g, b);
+            }
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            geometry.computeVertexNormals();
+            const material = new THREE.MeshPhongMaterial({ vertexColors: true, flatShading: true, shininess: 40, transparent: true, opacity: 0.7 });
+            field = new THREE.Mesh(geometry, material);
+
+            // Dodaj prvo linije, pa tek onda talasastu površinu (da linije budu iznad)
+        }
+
+        // Dodaj svetlo za bolji efekat talasaste površine
+        if (showWave) {
+            const light = new THREE.DirectionalLight(0xffffff, 1.1);
+            light.position.set(0, 0, 1000);
+            scene.add(light);
+            const amb = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(amb);
+        }
 
         // Bele linije (pravougaonici i centar)
         const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 });
@@ -96,6 +151,11 @@ const SandMeScanPage: React.FC = () => {
 
         // Dodaj linije u scenu
         lines.forEach(line => scene.add(line));
+
+        // Dodaj talasastu površinu tek nakon linija, da linije budu iznad
+        if (showWave) {
+            scene.add(field);
+        }
 
         // --- Teniska mreža sa stubovima (ispravno orijentisana) ---
         // Pozicija mreže: y od -130 do 130, x = 0
@@ -226,12 +286,23 @@ const SandMeScanPage: React.FC = () => {
             window.removeEventListener("mousemove", onMouseMove);
             canvas.removeEventListener("wheel", onWheel);
         };
-    }, []);
+    }, [showWave]);
 
     return (
         <div style={{ padding: 24 }}>
             <h1>Sand Me Scan</h1>
             <div ref={mountRef} />
+            <div style={{ marginTop: 16 }}>
+                <label>
+                    <input
+                        type="checkbox"
+                        checked={showWave}
+                        onChange={e => setShowWave(e.target.checked)}
+                        style={{ marginRight: 8 }}
+                    />
+                    Prikaži talasastu površinu
+                </label>
+            </div>
         </div>
     );
 };
