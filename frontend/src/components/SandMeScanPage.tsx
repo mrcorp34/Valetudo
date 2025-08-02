@@ -113,9 +113,9 @@ const SandMeScanPage: React.FC = () => {
     const [mockIntervalId, setMockIntervalId] = useState<NodeJS.Timeout | null>(null);
     // Predefinisane mock GPS tačke za kalibraciju
     const mockCalibPoints = React.useMemo(() => [
-        { x: 20.000000, y: 44.000000, z: 100.0 },
-        { x: 20.011885, y: 44.005485, z: 100.0 },
-        { x: 20.000000, y: 44.010970, z: 100.0 }
+        { x: 20.000000, y: 44.000000, z: 100.0 }, // donji levi
+        { x: 20.011885, y: 44.005485, z: 100.0 }, // centar
+        { x: 20.023770, y: 44.011000, z: 100.0 }  // gornji desni
     ], []);
 
     // Helper to get latest GPS coords from GpsFeed
@@ -131,9 +131,10 @@ const SandMeScanPage: React.FC = () => {
             // Start interval for robot movement
             if (!mockIntervalId) {
                 const id = setInterval(() => {
-                    const base = mockCalibPoints[1]; // center point
-                    const dx = (Math.random() - 0.5) * 0.004;
-                    const dy = (Math.random() - 0.5) * 0.002;
+                    const base = mockCalibPoints[1]; // centar
+                    // Raspon pomeranja po X i Y (longitude i latitude)
+                    const dx = (Math.random() - 0.5) * 0.02; // X (longitude)
+                    const dy = (Math.random() - 0.5) * 0.02; // Y (latitude) - sada veći raspon
                     setLastCoords({ x: base.x + dx, y: base.y + dy, z: base.z });
                 }, 1000);
                 setMockIntervalId(id);
@@ -160,6 +161,12 @@ const SandMeScanPage: React.FC = () => {
     }, [mockMode, calibStep, mockCalibPoints]);
 
     // ...existing code...
+    // --- Persistent robot marker ---
+    const robotMarkerRef = useRef<THREE.Mesh | null>(null);
+    const sceneRef = useRef<THREE.Scene | null>(null);
+    const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+    const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+
     useEffect(() => {
         // Dimenzije terena
         const fieldWidth = 540 * 1.1; // 594
@@ -171,6 +178,8 @@ const SandMeScanPage: React.FC = () => {
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(60, width / height, 1, 10000);
         camera.position.set(0, 0, 1200);
+        sceneRef.current = scene;
+        cameraRef.current = camera;
 
         let field: THREE.Mesh;
         if (!showWave) {
@@ -219,6 +228,67 @@ const SandMeScanPage: React.FC = () => {
             field = new THREE.Mesh(geometry, material);
 
             // Dodaj prvo linije, pa tek onda talasastu površinu (da linije budu iznad)
+        }
+
+        // --- Robot marker (crvena sfera) ---
+        // Funkcija za mapiranje GPS -> teren (afina transformacija)
+        function mapGpsToField(gps: {x?: number, y?: number, z?: number}) {
+            // Helper: pretvori GPS (lat/lon) u lokalne metre
+            function gpsToMeters(lat: number, lon: number, originLat: number, originLon: number) {
+                // 1 deg lat = ~111320m, 1 deg lon = ~111320m * cos(lat)
+                const dLat = (lat - originLat) * 111320;
+                const dLon = (lon - originLon) * 111320 * Math.cos(originLat * Math.PI / 180);
+                return { x: dLon, y: dLat };
+            }
+            if (calibPoints.length < 3 || gps.x === undefined || gps.y === undefined) {
+                // eslint-disable-next-line no-console
+                console.log('DEBUG mapGpsToField: nedovoljno referentnih tačaka ili GPS undefined', { calibPoints: calibPoints, gps: gps });
+                return null;
+            }
+            // Teren: donji levi, centar, gornji desni
+            const fieldRef = [
+                { x: -270, y: -130 }, // donji levi
+                { x: 0, y: 0 },       // centar
+                { x: 270, y: 130 }    // gornji desni
+            ];
+            // GPS referentne tačke u metrima
+            const origin = { lat: calibPoints[0].y, lon: calibPoints[0].x };
+            const gpsRef = calibPoints.map(p => gpsToMeters(p.y, p.x, origin.lat, origin.lon));
+            // Pretvori trenutnu GPS tačku u metre
+            const meters = gpsToMeters(gps.y, gps.x, origin.lat, origin.lon);
+            // Barycentric interpolation
+            function barycentric(p: {x: number, y: number}, a: {x: number, y: number}, b: {x: number, y: number}, c: {x: number, y: number}) {
+                const detT = (b.y - c.y)*(a.x - c.x) + (c.x - b.x)*(a.y - c.y);
+                const l1 = ((b.y - c.y)*(p.x - c.x) + (c.x - b.x)*(p.y - c.y)) / detT;
+                const l2 = ((c.y - a.y)*(p.x - c.x) + (a.x - c.x)*(p.y - c.y)) / detT;
+                const l3 = 1 - l1 - l2;
+                return { l1: l1, l2: l2, l3: l3 };
+            }
+            const bary = barycentric(meters, gpsRef[0], gpsRef[1], gpsRef[2]);
+            // eslint-disable-next-line no-console
+            console.log('DEBUG barycentric:', bary);
+            // Interpoliraj poziciju na terenu
+            const x = bary.l1 * fieldRef[0].x + bary.l2 * fieldRef[1].x + bary.l3 * fieldRef[2].x;
+            const y = bary.l1 * fieldRef[0].y + bary.l2 * fieldRef[1].y + bary.l3 * fieldRef[2].y;
+            // eslint-disable-next-line no-console
+            console.log('DEBUG mapped marker position:', { x: x, y: y });
+            return { x: x, y: y };
+        }
+
+        // Dodaj marker mesh jednom, ali ne postavljaj poziciju ovde
+        // Always add marker after field and lines for visibility
+        if (!robotMarkerRef.current && calibPoints.length === 3) {
+            const markerGeometry = new THREE.SphereGeometry(24, 32, 32); // larger sphere
+            const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xff2222 }); // red for robot
+            const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+            marker.position.set(0, 0, 100); // initial position
+            scene.add(marker);
+            robotMarkerRef.current = marker;
+        }
+        // Remove marker if calibration is not done
+        if (robotMarkerRef.current && calibPoints.length !== 3) {
+            scene.remove(robotMarkerRef.current);
+            robotMarkerRef.current = null;
         }
 
         // Dodaj svetlo za bolji efekat talasaste površine
@@ -436,7 +506,17 @@ const SandMeScanPage: React.FC = () => {
         window.addEventListener("mousemove", onMouseMove);
 
         // Animacija
+        rendererRef.current = renderer;
         const animate = () => {
+            // Update robot marker position using affine transform
+            if (robotMarkerRef.current && calibPoints.length === 3 && lastCoords.x !== undefined && lastCoords.y !== undefined) {
+                const pos = mapGpsToField(lastCoords);
+                // eslint-disable-next-line no-console
+                console.log('DEBUG mapped marker position:', pos);
+                if (pos) {
+                    robotMarkerRef.current.position.set(pos.x, pos.y, 100); // Z=100 above field
+                }
+            }
             renderer.render(scene, camera);
             requestAnimationFrame(animate);
         };
@@ -449,6 +529,11 @@ const SandMeScanPage: React.FC = () => {
             window.removeEventListener("mousemove", onMouseMove);
             canvas.removeEventListener("wheel", onWheel);
             window.removeEventListener("resize", handleResize);
+            // Remove marker from scene on cleanup
+            if (robotMarkerRef.current && sceneRef.current) {
+                sceneRef.current.remove(robotMarkerRef.current);
+                robotMarkerRef.current = null;
+            }
         };
     }, [showWave, calibPoints, calibStep, lastCoords]);
 
