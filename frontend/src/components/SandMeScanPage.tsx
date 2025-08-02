@@ -109,11 +109,55 @@ const SandMeScanPage: React.FC = () => {
     const [calibStep, setCalibStep] = useState(0);
     const [calibPoints, setCalibPoints] = useState<Array<{x: number, y: number, z: number}>>([]);
     const [lastCoords, setLastCoords] = useState<{x?: number, y?: number, z?: number}>({});
+    const [mockMode, setMockMode] = useState(false);
+    const [mockIntervalId, setMockIntervalId] = useState<NodeJS.Timeout | null>(null);
+    // Predefinisane mock GPS tačke za kalibraciju
+    const mockCalibPoints = React.useMemo(() => [
+        { x: 20.000000, y: 44.000000, z: 100.0 },
+        { x: 20.011885, y: 44.005485, z: 100.0 },
+        { x: 20.000000, y: 44.010970, z: 100.0 }
+    ], []);
 
     // Helper to get latest GPS coords from GpsFeed
     const handleGpsCoords = (coords: {x?: number, y?: number, z?: number}) => {
-        setLastCoords(coords);
+        if (!mockMode) {
+            setLastCoords(coords);
+        }
     };
+
+    // Mock robot movement logic
+    useEffect(() => {
+        if (mockMode && calibStep >= CALIBRATION_STEPS.length) {
+            // Start interval for robot movement
+            if (!mockIntervalId) {
+                const id = setInterval(() => {
+                    const base = mockCalibPoints[1]; // center point
+                    const dx = (Math.random() - 0.5) * 0.004;
+                    const dy = (Math.random() - 0.5) * 0.002;
+                    setLastCoords({ x: base.x + dx, y: base.y + dy, z: base.z });
+                }, 1000);
+                setMockIntervalId(id);
+            }
+        } else {
+            // Stop interval if not in mock mode or calibration not finished
+            if (mockIntervalId) {
+                clearInterval(mockIntervalId);
+                setMockIntervalId(null);
+            }
+        }
+        return () => {
+            if (mockIntervalId) {
+                clearInterval(mockIntervalId);
+            }
+        };
+    }, [mockMode, calibStep, mockCalibPoints, mockIntervalId]);
+
+    // Handle calibration in mock mode
+    useEffect(() => {
+        if (mockMode && calibStep < CALIBRATION_STEPS.length) {
+            setLastCoords(mockCalibPoints[calibStep]);
+        }
+    }, [mockMode, calibStep, mockCalibPoints]);
 
     // ...existing code...
     useEffect(() => {
@@ -409,8 +453,24 @@ const SandMeScanPage: React.FC = () => {
     }, [showWave, calibPoints, calibStep, lastCoords]);
 
     return (
-        <div style={{ padding: 24 }}>
+        <div style={{ padding: 24, position: 'relative' }}>
             <h1>Sand Me Scan</h1>
+            {/* Mock mode toggle */}
+            <div style={{ position: 'absolute', top: 24, right: 24, zIndex: 10 }}>
+                <label style={{ background: '#eef', padding: '8px 16px', borderRadius: 8, fontWeight: 'bold', boxShadow: '0 2px 8px #0002', cursor: 'pointer' }}>
+                    <input
+                        type="checkbox"
+                        checked={mockMode}
+                        onChange={e => {
+                            setMockMode(e.target.checked);
+                            setCalibStep(0);
+                            setCalibPoints([]);
+                        }}
+                        style={{ marginRight: 8 }}
+                    />
+                    Mock GPS
+                </label>
+            </div>
             {/* Calibration Wizard */}
             {calibStep < CALIBRATION_STEPS.length ? (
                 <div style={{ background: '#ffe', borderRadius: 8, padding: 16, marginBottom: 24, boxShadow: '0 2px 8px #0002' }}>
@@ -429,7 +489,11 @@ const SandMeScanPage: React.FC = () => {
                         disabled={lastCoords.x === undefined || lastCoords.y === undefined || lastCoords.z === undefined}
                         onClick={() => {
                             if (lastCoords.x !== undefined && lastCoords.y !== undefined && lastCoords.z !== undefined) {
-                                setCalibPoints([...calibPoints, { x: lastCoords.x, y: lastCoords.y, z: lastCoords.z }]);
+                                if (mockMode) {
+                                    setCalibPoints([...calibPoints, mockCalibPoints[calibStep]]);
+                                } else {
+                                    setCalibPoints([...calibPoints, { x: lastCoords.x, y: lastCoords.y, z: lastCoords.z }]);
+                                }
                                 setCalibStep(calibStep + 1);
                             }
                         }}
@@ -454,7 +518,7 @@ const SandMeScanPage: React.FC = () => {
                 </label>
             </div>
             {/* Pass GPS coords to GpsFeed and get updates */}
-            <GpsFeed onCoords={handleGpsCoords} />
+            {!mockMode && <GpsFeed onCoords={handleGpsCoords} />}
         </div>
     );
 };
