@@ -1,4 +1,84 @@
 import React, { useRef, useEffect, useState } from "react";
+
+const parseCoords = (line: string): {x?: number, y?: number, z?: number} => {
+    // Example: parse NMEA GGA or custom format: "$GPGGA,lat,lon,alt,..."
+    // Try to extract lat/lon/alt from NMEA or "X,Y,Z" ascii
+    if (line.startsWith('$GPGGA')) {
+        const parts = line.split(',');
+        // NMEA: $GPGGA,time,lat,N,lon,E,fix,sats,hdop,alt,...
+        const latRaw = parts[2];
+        const latDir = parts[3];
+        const lonRaw = parts[4];
+        const lonDir = parts[5];
+        const altRaw = parts[9];
+        // Convert lat/lon from ddmm.mmmm to decimal degrees
+        const parseNmeaCoord = (raw: string, dir: string) => {
+            if (!raw) { return undefined; }
+            const deg = parseFloat(raw.slice(0, raw.indexOf('.') - 2));
+            const min = parseFloat(raw.slice(raw.indexOf('.') - 2));
+            let val = deg + min / 60;
+            if (dir === 'S' || dir === 'W') { val *= -1; }
+            return val;
+        };
+        const lat = parseNmeaCoord(latRaw, latDir);
+        const lon = parseNmeaCoord(lonRaw, lonDir);
+        const alt = altRaw ? parseFloat(altRaw) : undefined;
+        return { x: lon, y: lat, z: alt };
+    }
+    // Try "X,Y,Z" ascii line
+    const m = line.match(/(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
+    if (m) {
+        return { x: parseFloat(m[1]), y: parseFloat(m[2]), z: parseFloat(m[3]) };
+    }
+    return {};
+};
+
+const GpsFeed: React.FC = () => {
+    const [lines, setLines] = useState<string[]>([]);
+    const [status, setStatus] = useState<'connecting'|'open'|'error'|'closed'>('connecting');
+    const [errorMsg, setErrorMsg] = useState<string>('');
+    const [coords, setCoords] = useState<{x?: number, y?: number, z?: number}>({});
+    useEffect(() => {
+        const ws = new window.WebSocket('ws://localhost:8089');
+        ws.onopen = () => {
+            setStatus('open');
+        };
+        ws.onerror = (e) => {
+            setStatus('error');
+            setErrorMsg('WebSocket connection error. Server might not be running or port is blocked.');
+        };
+        ws.onclose = () => {
+            setStatus('closed');
+        };
+        ws.onmessage = (event) => {
+            setLines(prev => [event.data, ...prev].slice(0, 50));
+            const c = parseCoords(event.data);
+            if (c.x !== undefined && c.y !== undefined && c.z !== undefined) {
+                setCoords(c);
+            }
+        };
+        return () => ws.close();
+    }, []);
+    return (
+        <>
+            <div style={{ color: '#fff', marginBottom: 8, fontFamily: 'monospace', fontWeight: 'bold' }}>
+                Koordinate: <span style={{ color: '#0ff', fontWeight: 'normal' }}>
+                    {coords.x !== undefined && coords.y !== undefined && coords.z !== undefined ?
+                        `(${coords.x.toFixed(6)}, ${coords.y.toFixed(6)}, ${coords.z.toFixed(2)})` :
+                        'N/A'}
+                </span>
+            </div>
+            <div style={{ marginTop: 32, background: '#222', color: '#0f0', padding: 12, borderRadius: 8, fontFamily: 'monospace', maxHeight: 300, overflowY: 'auto' }}>
+                <div style={{ fontWeight: 'bold', marginBottom: 8 }}>GPS Feed (COM3):</div>
+                {status === 'connecting' && <div style={{ color: '#888' }}>Povezivanje...</div>}
+                {status === 'error' && <div style={{ color: '#f00' }}>Greška: {errorMsg}</div>}
+                {status === 'closed' && <div style={{ color: '#888' }}>Veza zatvorena.</div>}
+                {status === 'open' && lines.length === 0 && <div style={{ color: '#888' }}>Nema podataka...</div>}
+                {status === 'open' && lines.length > 0 && lines.map((line, i) => <div key={i}>{line}</div>)}
+            </div>
+        </>
+    );
+};
 import * as THREE from "three";
 
 const SandMeScanPage: React.FC = () => {
@@ -6,8 +86,18 @@ const SandMeScanPage: React.FC = () => {
     const [showWave, setShowWave] = useState(false);
 
     useEffect(() => {
-        const width = 900;
-        const height = 500;
+        // Prilagodi veličinu scene veličini prozora
+        const getSize = () => {
+            const container = mountRef.current;
+            if (container) {
+                return {
+                    width: container.clientWidth || window.innerWidth,
+                    height: container.clientHeight || window.innerHeight * 0.7
+                };
+            }
+            return { width: window.innerWidth, height: window.innerHeight * 0.7 };
+        };
+        const { width, height } = getSize();
         const scene = new THREE.Scene();
         // Perspektivna kamera za realističan 3D prikaz
         const aspect = width / height;
@@ -213,6 +303,15 @@ const SandMeScanPage: React.FC = () => {
         renderer.setSize(width, height);
         const canvas = renderer.domElement;
 
+        // Resize handler
+        const handleResize = () => {
+            const { width, height } = getSize();
+            renderer.setSize(width, height);
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+        };
+        window.addEventListener("resize", handleResize);
+
         // --- Zoom/odzoom rollerom miša ---
         const onWheel = (event: WheelEvent) => {
             event.preventDefault();
@@ -285,13 +384,14 @@ const SandMeScanPage: React.FC = () => {
             window.removeEventListener("mouseup", onMouseUp);
             window.removeEventListener("mousemove", onMouseMove);
             canvas.removeEventListener("wheel", onWheel);
+            window.removeEventListener("resize", handleResize);
         };
     }, [showWave]);
 
     return (
         <div style={{ padding: 24 }}>
             <h1>Sand Me Scan</h1>
-            <div ref={mountRef} />
+            <div ref={mountRef} style={{ width: "100%", height: "70vh", minHeight: 300 }} />
             <div style={{ marginTop: 16 }}>
                 <label>
                     <input
@@ -303,6 +403,7 @@ const SandMeScanPage: React.FC = () => {
                     Prikaži talasastu površinu
                 </label>
             </div>
+            <GpsFeed />
         </div>
     );
 };

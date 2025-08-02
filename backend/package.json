@@ -52,8 +52,10 @@
     "nested-property": "4.0.0",
     "openapi-validator-middleware": "3.2.6",
     "semaphore": "1.1.0",
+    "serialport": "^13.0.0",
     "swagger-ui-express": "5.0.1",
     "uuid": "10.0.0",
+    "ws": "^8.18.3",
     "zoo-ids": "2.0.7"
   },
   "devDependencies": {
@@ -66,9 +68,9 @@
     "@types/node-ssdp": "4.0.4",
     "@types/semaphore": "1.1.4",
     "@types/uuid": "10.0.0",
+    "@yao-pkg/pkg": "5.11.0",
     "cross-env": "7.0.3",
     "mocha": "10.7.3",
-    "@yao-pkg/pkg": "5.11.0",
     "should": "13.2.3"
   }
 }
