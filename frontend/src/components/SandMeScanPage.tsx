@@ -33,7 +33,11 @@ const parseCoords = (line: string): {x?: number, y?: number, z?: number} => {
     return {};
 };
 
-const GpsFeed: React.FC = () => {
+interface GpsFeedProps {
+    onCoords?: (coords: {x?: number, y?: number, z?: number}) => void;
+}
+
+const GpsFeed: React.FC<GpsFeedProps> = ({ onCoords }) => {
     const [lines, setLines] = useState<string[]>([]);
     const [status, setStatus] = useState<'connecting'|'open'|'error'|'closed'>('connecting');
     const [errorMsg, setErrorMsg] = useState<string>('');
@@ -55,10 +59,13 @@ const GpsFeed: React.FC = () => {
             const c = parseCoords(event.data);
             if (c.x !== undefined && c.y !== undefined && c.z !== undefined) {
                 setCoords(c);
+                if (onCoords) {
+                    onCoords(c);
+                }
             }
         };
         return () => ws.close();
-    }, []);
+    }, [onCoords]);
     return (
         <>
             <div style={{ color: '#fff', marginBottom: 8, fontFamily: 'monospace', fontWeight: 'bold' }}>
@@ -81,33 +88,45 @@ const GpsFeed: React.FC = () => {
 };
 import * as THREE from "three";
 
+const CALIBRATION_STEPS = [
+    {
+        label: 'Donji levi ugao (između double out linije i osnovne linije)',
+        desc: 'Postavite robota u donji levi ugao terena, između double out linije i osnovne linije.'
+    },
+    {
+        label: 'T-linija i linija između servis boxova',
+        desc: 'Postavite robota na preseku T-linije i linije između servis boxova.'
+    },
+    {
+        label: 'Leva out linija + base linija',
+        desc: 'Postavite robota na preseku leve out linije i osnovne linije.'
+    }
+];
+
 const SandMeScanPage: React.FC = () => {
     const mountRef = useRef<HTMLDivElement>(null);
     const [showWave, setShowWave] = useState(false);
+    const [calibStep, setCalibStep] = useState(0);
+    const [calibPoints, setCalibPoints] = useState<Array<{x: number, y: number, z: number}>>([]);
+    const [lastCoords, setLastCoords] = useState<{x?: number, y?: number, z?: number}>({});
 
+    // Helper to get latest GPS coords from GpsFeed
+    const handleGpsCoords = (coords: {x?: number, y?: number, z?: number}) => {
+        setLastCoords(coords);
+    };
+
+    // ...existing code...
     useEffect(() => {
-        // Prilagodi veličinu scene veličini prozora
-        const getSize = () => {
-            const container = mountRef.current;
-            if (container) {
-                return {
-                    width: container.clientWidth || window.innerWidth,
-                    height: container.clientHeight || window.innerHeight * 0.7
-                };
-            }
-            return { width: window.innerWidth, height: window.innerHeight * 0.7 };
-        };
-        const { width, height } = getSize();
-        const scene = new THREE.Scene();
-        // Perspektivna kamera za realističan 3D prikaz
-        const aspect = width / height;
-        const camera = new THREE.PerspectiveCamera(45, aspect, 1, 3000);
-        camera.position.set(0, 0, 1200);
-        camera.lookAt(0, 0, 0);
-
         // Dimenzije terena
         const fieldWidth = 540 * 1.1; // 594
         const fieldHeight = 360 * 1.1; // 396
+
+        // Dodaj scene i camera
+        const width = mountRef.current?.clientWidth || 800;
+        const height = mountRef.current?.clientHeight || 600;
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(60, width / height, 1, 10000);
+        camera.position.set(0, 0, 1200);
 
         let field: THREE.Mesh;
         if (!showWave) {
@@ -305,7 +324,8 @@ const SandMeScanPage: React.FC = () => {
 
         // Resize handler
         const handleResize = () => {
-            const { width, height } = getSize();
+            const width = mountRef.current?.clientWidth || 800;
+            const height = mountRef.current?.clientHeight || 600;
             renderer.setSize(width, height);
             camera.aspect = width / height;
             camera.updateProjectionMatrix();
@@ -386,11 +406,41 @@ const SandMeScanPage: React.FC = () => {
             canvas.removeEventListener("wheel", onWheel);
             window.removeEventListener("resize", handleResize);
         };
-    }, [showWave]);
+    }, [showWave, calibPoints, calibStep, lastCoords]);
 
     return (
         <div style={{ padding: 24 }}>
             <h1>Sand Me Scan</h1>
+            {/* Calibration Wizard */}
+            {calibStep < CALIBRATION_STEPS.length ? (
+                <div style={{ background: '#ffe', borderRadius: 8, padding: 16, marginBottom: 24, boxShadow: '0 2px 8px #0002' }}>
+                    <div style={{ fontWeight: 'bold', marginBottom: 8 }}>Kalibracija ({calibStep + 1}/{CALIBRATION_STEPS.length})</div>
+                    <div style={{ marginBottom: 8 }}>{CALIBRATION_STEPS[calibStep].desc}</div>
+                    <div style={{ marginBottom: 8 }}>
+                        <span style={{ color: '#333' }}>Trenutne GPS koordinate: </span>
+                        <span style={{ color: '#0a0', fontWeight: 'bold' }}>
+                            {lastCoords.x !== undefined && lastCoords.y !== undefined && lastCoords.z !== undefined ?
+                                `(${lastCoords.x.toFixed(6)}, ${lastCoords.y.toFixed(6)}, ${lastCoords.z.toFixed(2)})` :
+                                'N/A'}
+                        </span>
+                    </div>
+                    <button
+                        style={{ padding: '8px 24px', fontWeight: 'bold', background: '#0a0', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+                        disabled={lastCoords.x === undefined || lastCoords.y === undefined || lastCoords.z === undefined}
+                        onClick={() => {
+                            if (lastCoords.x !== undefined && lastCoords.y !== undefined && lastCoords.z !== undefined) {
+                                setCalibPoints([...calibPoints, { x: lastCoords.x, y: lastCoords.y, z: lastCoords.z }]);
+                                setCalibStep(calibStep + 1);
+                            }
+                        }}
+                    >Done</button>
+                </div>
+            ) : (
+                <div style={{ background: '#e0ffe0', borderRadius: 8, padding: 16, marginBottom: 24, boxShadow: '0 2px 8px #0002' }}>
+                    <div style={{ fontWeight: 'bold', marginBottom: 8 }}>Kalibracija završena!</div>
+                    <div>Referentne tačke su sačuvane. Robot marker će se pojavljivati na terenu prema GPS poziciji.</div>
+                </div>
+            )}
             <div ref={mountRef} style={{ width: "100%", height: "70vh", minHeight: 300 }} />
             <div style={{ marginTop: 16 }}>
                 <label>
@@ -403,7 +453,8 @@ const SandMeScanPage: React.FC = () => {
                     Prikaži talasastu površinu
                 </label>
             </div>
-            <GpsFeed />
+            {/* Pass GPS coords to GpsFeed and get updates */}
+            <GpsFeed onCoords={handleGpsCoords} />
         </div>
     );
 };
