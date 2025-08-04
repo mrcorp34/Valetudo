@@ -1,107 +1,7 @@
 import React, { useRef, useEffect, useState } from "react";
-
-const parseCoords = (line: string): {x?: number, y?: number, z?: number} => {
-    // Example: parse NMEA GGA or custom format: "$GPGGA,lat,lon,alt,..."
-    // Try to extract lat/lon/alt from NMEA or "X,Y,Z" ascii
-    if (line.startsWith('$GPGGA')) {
-        const parts = line.split(',');
-        // NMEA: $GPGGA,time,lat,N,lon,E,fix,sats,hdop,alt,...
-        const latRaw = parts[2];
-        const latDir = parts[3];
-        const lonRaw = parts[4];
-        const lonDir = parts[5];
-        const altRaw = parts[9];
-        // Convert lat/lon from ddmm.mmmm to decimal degrees
-        const parseNmeaCoord = (raw: string, dir: string) => {
-            if (!raw) { return undefined; }
-            const deg = parseFloat(raw.slice(0, raw.indexOf('.') - 2));
-            const min = parseFloat(raw.slice(raw.indexOf('.') - 2));
-            let val = deg + min / 60;
-            if (dir === 'S' || dir === 'W') { val *= -1; }
-            return val;
-        };
-        const lat = parseNmeaCoord(latRaw, latDir);
-        const lon = parseNmeaCoord(lonRaw, lonDir);
-        const alt = altRaw ? parseFloat(altRaw) : undefined;
-        return { x: lon, y: lat, z: alt };
-    }
-    // Try "X,Y,Z" ascii line
-    const m = line.match(/(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
-    if (m) {
-        return { x: parseFloat(m[1]), y: parseFloat(m[2]), z: parseFloat(m[3]) };
-    }
-    return {};
-};
-
-interface GpsFeedProps {
-    onCoords?: (coords: {x?: number, y?: number, z?: number}) => void;
-}
-
-const GpsFeed: React.FC<GpsFeedProps> = ({ onCoords }) => {
-    const [lines, setLines] = useState<string[]>([]);
-    const [status, setStatus] = useState<'connecting'|'open'|'error'|'closed'>('connecting');
-    const [errorMsg, setErrorMsg] = useState<string>('');
-    const [coords, setCoords] = useState<{x?: number, y?: number, z?: number}>({});
-    useEffect(() => {
-        const ws = new window.WebSocket('ws://localhost:8089');
-        ws.onopen = () => {
-            setStatus('open');
-        };
-        ws.onerror = (e) => {
-            setStatus('error');
-            setErrorMsg('WebSocket connection error. Server might not be running or port is blocked.');
-        };
-        ws.onclose = () => {
-            setStatus('closed');
-        };
-        ws.onmessage = (event) => {
-            setLines(prev => [event.data, ...prev].slice(0, 50));
-            const c = parseCoords(event.data);
-            if (c.x !== undefined && c.y !== undefined && c.z !== undefined) {
-                setCoords(c);
-                if (onCoords) {
-                    onCoords(c);
-                }
-            }
-        };
-        return () => ws.close();
-    }, [onCoords]);
-    return (
-        <>
-            <div style={{ color: '#fff', marginBottom: 8, fontFamily: 'monospace', fontWeight: 'bold' }}>
-                Koordinate: <span style={{ color: '#0ff', fontWeight: 'normal' }}>
-                    {coords.x !== undefined && coords.y !== undefined && coords.z !== undefined ?
-                        `(${coords.x.toFixed(6)}, ${coords.y.toFixed(6)}, ${coords.z.toFixed(2)})` :
-                        'N/A'}
-                </span>
-            </div>
-            <div style={{ marginTop: 32, background: '#222', color: '#0f0', padding: 12, borderRadius: 8, fontFamily: 'monospace', maxHeight: 300, overflowY: 'auto' }}>
-                <div style={{ fontWeight: 'bold', marginBottom: 8 }}>GPS Feed (COM3):</div>
-                {status === 'connecting' && <div style={{ color: '#888' }}>Povezivanje...</div>}
-                {status === 'error' && <div style={{ color: '#f00' }}>Greška: {errorMsg}</div>}
-                {status === 'closed' && <div style={{ color: '#888' }}>Veza zatvorena.</div>}
-                {status === 'open' && lines.length === 0 && <div style={{ color: '#888' }}>Nema podataka...</div>}
-                {status === 'open' && lines.length > 0 && lines.map((line, i) => <div key={i}>{line}</div>)}
-            </div>
-        </>
-    );
-};
+import GpsFeed from "./GpsFeed";
 import * as THREE from "three";
-
-const CALIBRATION_STEPS = [
-    {
-        label: 'Donji levi ugao (između double out linije i osnovne linije)',
-        desc: 'Postavite robota u donji levi ugao terena, između double out linije i osnovne linije.'
-    },
-    {
-        label: 'T-linija i linija između servis boxova',
-        desc: 'Postavite robota na preseku T-linije i linije između servis boxova.'
-    },
-    {
-        label: 'Leva out linija + base linija',
-        desc: 'Postavite robota na preseku leve out linije i osnovne linije.'
-    }
-];
+import CalibrationWizard, { CALIBRATION_STEPS } from "./CalibrationWizard";
 
 const SandMeScanPage: React.FC = () => {
     const mountRef = useRef<HTMLDivElement>(null);
@@ -556,40 +456,16 @@ const SandMeScanPage: React.FC = () => {
                     Mock GPS
                 </label>
             </div>
-            {/* Calibration Wizard */}
-            {calibStep < CALIBRATION_STEPS.length ? (
-                <div style={{ background: '#ffe', borderRadius: 8, padding: 16, marginBottom: 24, boxShadow: '0 2px 8px #0002' }}>
-                    <div style={{ fontWeight: 'bold', marginBottom: 8 }}>Kalibracija ({calibStep + 1}/{CALIBRATION_STEPS.length})</div>
-                    <div style={{ marginBottom: 8 }}>{CALIBRATION_STEPS[calibStep].desc}</div>
-                    <div style={{ marginBottom: 8 }}>
-                        <span style={{ color: '#333' }}>Trenutne GPS koordinate: </span>
-                        <span style={{ color: '#0a0', fontWeight: 'bold' }}>
-                            {lastCoords.x !== undefined && lastCoords.y !== undefined && lastCoords.z !== undefined ?
-                                `(${lastCoords.x.toFixed(6)}, ${lastCoords.y.toFixed(6)}, ${lastCoords.z.toFixed(2)})` :
-                                'N/A'}
-                        </span>
-                    </div>
-                    <button
-                        style={{ padding: '8px 24px', fontWeight: 'bold', background: '#0a0', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}
-                        disabled={lastCoords.x === undefined || lastCoords.y === undefined || lastCoords.z === undefined}
-                        onClick={() => {
-                            if (lastCoords.x !== undefined && lastCoords.y !== undefined && lastCoords.z !== undefined) {
-                                if (mockMode) {
-                                    setCalibPoints([...calibPoints, mockCalibPoints[calibStep]]);
-                                } else {
-                                    setCalibPoints([...calibPoints, { x: lastCoords.x, y: lastCoords.y, z: lastCoords.z }]);
-                                }
-                                setCalibStep(calibStep + 1);
-                            }
-                        }}
-                    >Done</button>
-                </div>
-            ) : (
-                <div style={{ background: '#e0ffe0', borderRadius: 8, padding: 16, marginBottom: 24, boxShadow: '0 2px 8px #0002' }}>
-                    <div style={{ fontWeight: 'bold', marginBottom: 8 }}>Kalibracija završena!</div>
-                    <div>Referentne tačke su sačuvane. Robot marker će se pojavljivati na terenu prema GPS poziciji.</div>
-                </div>
-            )}
+            {/* Calibration Wizard extracted to its own component */}
+            <CalibrationWizard
+                calibStep={calibStep}
+                setCalibStep={setCalibStep}
+                calibPoints={calibPoints}
+                setCalibPoints={setCalibPoints}
+                lastCoords={lastCoords}
+                mockMode={mockMode}
+                mockCalibPoints={mockCalibPoints}
+            />
             <div ref={mountRef} style={{ width: "100%", height: "70vh", minHeight: 300 }} />
             <div style={{ marginTop: 16 }}>
                 <label>
