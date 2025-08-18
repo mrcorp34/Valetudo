@@ -51,6 +51,60 @@ const ThreeCourtScene: React.FC<ThreeCourtSceneProps> = ({ showWave, calibPoints
         controlsRef.current.screenSpacePanning = false;
         controlsRef.current.minDistance = 400;
         controlsRef.current.maxDistance = 5000;
+        // Custom mouse buttons:
+        controlsRef.current.mouseButtons = {
+            LEFT: THREE.MOUSE.ROTATE,
+            MIDDLE: THREE.MOUSE.PAN,
+            RIGHT: -1 // disable default right button
+        };
+        controlsRef.current.enablePan = true;
+        controlsRef.current.enableRotate = true;
+
+        // Custom right mouse button: rotacija oko Z ose
+        let isRightMouseDown = false;
+        let lastX = 0;
+        const domElement = renderer.domElement;
+        function onPointerDown(e: MouseEvent) {
+            if (e.button === 2) {
+                isRightMouseDown = true;
+                lastX = e.clientX;
+                domElement.style.cursor = 'ew-resize';
+            }
+        }
+        function onPointerUp(e: MouseEvent) {
+            if (e.button === 2) {
+                isRightMouseDown = false;
+                domElement.style.cursor = '';
+            }
+        }
+        function onPointerMove(e: MouseEvent) {
+            if (isRightMouseDown) {
+                const deltaX = e.clientX - lastX;
+                lastX = e.clientX;
+                // Rotiraj kameru oko svoje lokalne Z ose (pravca gledanja)
+                const controls = controlsRef.current;
+                if (controls) {
+                    const angle = -deltaX * 0.01;
+                    const offset = new THREE.Vector3();
+                    offset.copy(camera.position).sub(controls.target);
+                    // Osa rotacije: forward vektor kamere
+                    const camDir = new THREE.Vector3();
+                    camera.getWorldDirection(camDir);
+                    const quat = new THREE.Quaternion();
+                    quat.setFromAxisAngle(camDir.normalize(), angle);
+                    offset.applyQuaternion(quat);
+                    camera.position.copy(controls.target).add(offset);
+                    camera.lookAt(controls.target);
+                }
+            }
+        }
+        domElement.addEventListener('mousedown', onPointerDown);
+        domElement.addEventListener('mouseup', onPointerUp);
+        domElement.addEventListener('mouseleave', onPointerUp);
+        domElement.addEventListener('mousemove', onPointerMove);
+
+        // Disable context menu on right click
+        domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 
         // Mount
         if (mountRef.current) {
