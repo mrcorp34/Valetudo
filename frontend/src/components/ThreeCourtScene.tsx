@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from "react";
 import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 
 interface ThreeCourtSceneProps {
     showWave: boolean;
@@ -7,23 +8,19 @@ interface ThreeCourtSceneProps {
     lastCoords: { x?: number, y?: number, z?: number };
 }
 
-const ThreeCourtScene: React.FC<ThreeCourtSceneProps> = ({
-    showWave,
-    calibPoints,
-    lastCoords,
-}) => {
+
+const ThreeCourtScene: React.FC<ThreeCourtSceneProps> = ({ showWave, calibPoints, lastCoords }) => {
     const mountRef = useRef<HTMLDivElement>(null);
-    const robotMarkerRef = useRef<THREE.Mesh | null>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
     const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+    const robotMarkerRef = useRef<THREE.Mesh | null>(null);
+    const controlsRef = useRef<OrbitControls | null>(null);
+    const fieldMeshRef = useRef<THREE.Mesh | null>(null);
 
+    // Inicijalizacija scene, kamere, renderer-a i controls - SAMO JEDNOM
     useEffect(() => {
-        // Dimenzije terena
-        const fieldWidth = 540 * 1.1;
-        const fieldHeight = 360 * 1.1;
-
-        // Dodaj scene i camera
+        // (fieldWidth, fieldHeight) are not used in this effect
         const width = mountRef.current?.clientWidth || 800;
         const height = mountRef.current?.clientHeight || 600;
         const scene = new THREE.Scene();
@@ -32,15 +29,72 @@ const ThreeCourtScene: React.FC<ThreeCourtSceneProps> = ({
         sceneRef.current = scene;
         cameraRef.current = camera;
 
+        // Renderer
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setClearColor(0x222222);
+        renderer.setSize(width, height);
+        rendererRef.current = renderer;
+
+        // OrbitControls
+        controlsRef.current = new OrbitControls(camera, renderer.domElement);
+        controlsRef.current.enableDamping = true;
+        controlsRef.current.dampingFactor = 0.05;
+        controlsRef.current.screenSpacePanning = false;
+        controlsRef.current.minDistance = 400;
+        controlsRef.current.maxDistance = 5000;
+
+        // Mount
+        if (mountRef.current) {
+            mountRef.current.innerHTML = "";
+            mountRef.current.appendChild(renderer.domElement);
+        }
+
+        // Animacija
+        const animate = () => {
+            controlsRef.current?.update();
+            renderer.render(scene, camera);
+            requestAnimationFrame(animate);
+        };
+        animate();
+
+        // Resize handler
+        const handleResize = () => {
+            const width = mountRef.current?.clientWidth || 800;
+            const height = mountRef.current?.clientHeight || 600;
+            renderer.setSize(width, height);
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+        };
+        window.addEventListener("resize", handleResize);
+
+        return () => {
+            controlsRef.current?.dispose();
+            renderer.dispose();
+            window.removeEventListener("resize", handleResize);
+        };
+    }, []);
+
+    // Dodavanje/izmena podloge (field) i linija
+    useEffect(() => {
+        const scene = sceneRef.current;
+        if (!scene) { return; }
+        // Ukloni prethodni field ako postoji
+        if (fieldMeshRef.current) {
+            scene.remove(fieldMeshRef.current);
+            fieldMeshRef.current.geometry.dispose();
+            // @ts-ignore
+            if (fieldMeshRef.current.material.dispose) { fieldMeshRef.current.material.dispose(); }
+            fieldMeshRef.current = null;
+        }
+        // ...dodaj field (ravna ili talasasta površina, kao ranije)...
+        const fieldWidth = 540 * 1.1;
+        const fieldHeight = 360 * 1.1;
         let field: THREE.Mesh;
         if (!showWave) {
-            // Klasičan narandžasti pravougaonik
             const fieldGeometry = new THREE.PlaneGeometry(fieldWidth, fieldHeight);
             const fieldMaterial = new THREE.MeshBasicMaterial({ color: 0xffa500 });
             field = new THREE.Mesh(fieldGeometry, fieldMaterial);
-            scene.add(field);
         } else {
-            // Talasasta površina (sinusoidna) sa bojom po visini
             const segmentsW = 60;
             const segmentsH = 30;
             const geometry = new THREE.PlaneGeometry(fieldWidth, fieldHeight, segmentsW, segmentsH);
@@ -77,10 +131,12 @@ const ThreeCourtScene: React.FC<ThreeCourtSceneProps> = ({
             field = new THREE.Mesh(geometry, material);
         }
 
-        // Bele linije (pravougaonici i centar)
+        scene.add(field);
+        fieldMeshRef.current = field;
+
+        // --- Dodaj linije terena ---
         const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 });
         const lines: THREE.Line[] = [];
-
         const singlesTop = 130;
         const singlesBottom = -130;
         const singlesLeft = -270;
@@ -141,14 +197,14 @@ const ThreeCourtScene: React.FC<ThreeCourtSceneProps> = ({
         lines.push(new THREE.Line(tLine, lineMaterial));
 
         lines.forEach((line) => scene.add(line));
-        scene.add(field);
 
-        // --- Teniska mreža sa stubovima (ispravno orijentisana) ---
+        // --- Dodaj stubove i mrežu ---
         const netLength = 360;
         const netHeight = 40;
         const netX = 0;
         const netZ = 5;
 
+        // Stubovi
         const postRadius = 4;
         const postHeight = netHeight + 10;
         const postGeometry = new THREE.CylinderGeometry(postRadius, postRadius, postHeight, 16);
@@ -162,6 +218,7 @@ const ThreeCourtScene: React.FC<ThreeCourtSceneProps> = ({
         scene.add(leftPost);
         scene.add(rightPost);
 
+        // Mreža
         const netGeometry = new THREE.PlaneGeometry(netLength, netHeight, 18, 6);
         const netMaterial = new THREE.MeshBasicMaterial({
             color: 0x222222,
@@ -175,6 +232,7 @@ const ThreeCourtScene: React.FC<ThreeCourtSceneProps> = ({
         netMesh.rotation.y = Math.PI / 2;
         scene.add(netMesh);
 
+        // Linije mreže (imitacija žica)
         const netLineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, opacity: 0.7, transparent: true });
         for (let i = -180; i <= 180; i += 15) {
             const vertGeom = new THREE.BufferGeometry().setFromPoints([
@@ -191,17 +249,13 @@ const ThreeCourtScene: React.FC<ThreeCourtSceneProps> = ({
             ]);
             scene.add(new THREE.Line(horizGeom, netLineMaterial));
         }
+    }, [showWave]);
 
-        // Svetlo za talasastu površinu
-        if (showWave) {
-            const light = new THREE.DirectionalLight(0xffffff, 1.1);
-            light.position.set(0, 0, 1000);
-            scene.add(light);
-            const amb = new THREE.AmbientLight(0xffffff, 0.5);
-            scene.add(amb);
-        }
-
-        // --- Robot marker (crvena sfera) ---
+    // Dodavanje/izmena marker-a
+    useEffect(() => {
+        const scene = sceneRef.current;
+        if (!scene) { return; }
+        // Helper za mapiranje GPS -> teren
         function mapGpsToField(gps: { x?: number, y?: number, z?: number }) {
             function gpsToMeters(lat: number, lon: number, originLat: number, originLon: number) {
                 const dLat = (lat - originLat) * 111320;
@@ -237,117 +291,29 @@ const ThreeCourtScene: React.FC<ThreeCourtSceneProps> = ({
             return { x: x, y: y };
         }
 
-        if (!robotMarkerRef.current && calibPoints.length === 3) {
-            const markerGeometry = new THREE.SphereGeometry(24, 32, 32);
-            const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xff2222 });
-            const marker = new THREE.Mesh(markerGeometry, markerMaterial);
-            marker.position.set(0, 0, 100);
-            scene.add(marker);
-            robotMarkerRef.current = marker;
-        }
-        if (robotMarkerRef.current && calibPoints.length !== 3) {
-            scene.remove(robotMarkerRef.current);
-            robotMarkerRef.current = null;
-        }
-
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setClearColor(0x222222);
-        renderer.setSize(width, height);
-        const canvas = renderer.domElement;
-
-        // Resize handler
-        const handleResize = () => {
-            const width = mountRef.current?.clientWidth || 800;
-            const height = mountRef.current?.clientHeight || 600;
-            renderer.setSize(width, height);
-            camera.aspect = width / height;
-            camera.updateProjectionMatrix();
-        };
-        window.addEventListener("resize", handleResize);
-
-        // Zoom
-        const onWheel = (event: WheelEvent) => {
-            event.preventDefault();
-            const zoomSpeed = 0.2;
-            const delta = event.deltaY;
-            let newZ = camera.position.z + delta * zoomSpeed;
-            newZ = Math.max(400, Math.min(5000, newZ));
-            camera.position.z = newZ;
-        };
-        canvas.addEventListener("wheel", onWheel, { passive: false });
-
-        if (mountRef.current) {
-            mountRef.current.innerHTML = "";
-            mountRef.current.appendChild(canvas);
-        }
-
-        // Rotacija mišem
-        let isDragging = false;
-        let previousX = 0;
-        let previousY = 0;
-        let dragButton = 0;
-
-        const onMouseDown = (event: MouseEvent) => {
-            isDragging = true;
-            previousX = event.clientX;
-            previousY = event.clientY;
-            dragButton = event.button;
-        };
-        const onMouseUp = () => {
-            isDragging = false;
-        };
-        const onMouseMove = (event: MouseEvent) => {
-            if (!isDragging) { return; }
-            const deltaX = event.clientX - previousX;
-            const deltaY = event.clientY - previousY;
-            previousX = event.clientX;
-            previousY = event.clientY;
-            if (dragButton === 0) {
-                scene.rotation.y += deltaX * 0.01;
-                scene.rotation.x += deltaY * 0.01;
-            } else if (dragButton === 1) {
-                scene.position.x += deltaX;
-                scene.position.y -= deltaY;
-            } else if (dragButton === 2) {
-                scene.rotation.z += deltaX * 0.01;
+        // Dodaj ili ažuriraj marker
+        if (calibPoints.length === 3 && lastCoords.x !== undefined && lastCoords.y !== undefined) {
+            let marker = robotMarkerRef.current;
+            if (!marker) {
+                const markerGeometry = new THREE.SphereGeometry(24, 32, 32);
+                const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xff2222 });
+                marker = new THREE.Mesh(markerGeometry, markerMaterial);
+                marker.position.set(0, 0, 100);
+                scene.add(marker);
+                robotMarkerRef.current = marker;
             }
-        };
-
-        canvas.addEventListener("mousedown", onMouseDown);
-        window.addEventListener("mouseup", onMouseUp);
-        window.addEventListener("mousemove", onMouseMove);
-
-        rendererRef.current = renderer;
-        const animate = () => {
-            if (
-                robotMarkerRef.current &&
-                calibPoints.length === 3 &&
-                lastCoords.x !== undefined &&
-                lastCoords.y !== undefined
-            ) {
-                const pos = mapGpsToField(lastCoords);
-                if (pos) {
-                    robotMarkerRef.current.position.set(pos.x, pos.y, 100);
-                }
+            const pos = mapGpsToField(lastCoords);
+            if (pos) {
+                marker.position.set(pos.x, pos.y, 100);
             }
-            renderer.render(scene, camera);
-            requestAnimationFrame(animate);
-        };
-        animate();
-
-        return () => {
-            renderer.dispose();
-            canvas.removeEventListener("mousedown", onMouseDown);
-            window.removeEventListener("mouseup", onMouseUp);
-            window.removeEventListener("mousemove", onMouseMove);
-            canvas.removeEventListener("wheel", onWheel);
-            window.removeEventListener("resize", handleResize);
-            if (robotMarkerRef.current && sceneRef.current) {
-                sceneRef.current.remove(robotMarkerRef.current);
+        } else {
+            // Ukloni marker ako nema kalibracije
+            if (robotMarkerRef.current) {
+                scene.remove(robotMarkerRef.current);
                 robotMarkerRef.current = null;
             }
-        };
-    }, [showWave, calibPoints, lastCoords]);
+        }
+    }, [calibPoints, lastCoords]);
 
     return <div ref={mountRef} style={{ width: "100%", height: "70vh", minHeight: 300 }} />;
 };

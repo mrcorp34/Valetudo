@@ -1,5 +1,73 @@
 import React, { useEffect, useState } from "react";
-import { parseCoords } from "./utils/gpsUtils";
+
+// Inline parseCoords utility (was previously in gpsUtils)
+function parseCoords(line: string): { x?: number, y?: number, z?: number } {
+    // Primeri podržanih formata:
+    // 1. "43.123456, 20.987654, 123.45"
+    // 2. "lat:43.123456 lon:20.987654 alt:123.45"
+    // 3. "GPS: 43.123456 20.987654 123.45"
+    // 4. "NMEA: $GPGGA,...."
+    // 5. "x=43.123456 y=20.987654 z=123.45"
+    // 6. "43.123456 20.987654 123.45"
+    // 7. "lat=43.123456,lon=20.987654,alt=123.45"
+
+    // Najpre pokušaj da parsiraš kao CSV ili razmakom odvojene brojeve
+    const csvMatch = line.match(/(-?\d+\.\d+)[, ]+(-?\d+\.\d+)[, ]+(-?\d+\.?\d*)/);
+    if (csvMatch) {
+        return {
+            x: parseFloat(csvMatch[1]),
+            y: parseFloat(csvMatch[2]),
+            z: parseFloat(csvMatch[3])
+        };
+    }
+    // Klasični key-value formati
+    const kvMatch = line.match(/lat[:=](-?\d+\.\d+)[, ]+lon[:=](-?\d+\.\d+)[, ]+alt[:=](-?\d+\.?\d*)/i);
+    if (kvMatch) {
+        return {
+            x: parseFloat(kvMatch[1]),
+            y: parseFloat(kvMatch[2]),
+            z: parseFloat(kvMatch[3])
+        };
+    }
+    const kv2Match = line.match(/x[:=](-?\d+\.\d+)[, ]+y[:=](-?\d+\.\d+)[, ]+z[:=](-?\d+\.?\d*)/i);
+    if (kv2Match) {
+        return {
+            x: parseFloat(kv2Match[1]),
+            y: parseFloat(kv2Match[2]),
+            z: parseFloat(kv2Match[3])
+        };
+    }
+    // NMEA GGA string (samo osnovna podrška)
+    function nmeaToDec(raw: string, hem: string) {
+        if (!raw || !hem) { return undefined; }
+        // NMEA: ddmm.mmmm
+        const dotIdx = raw.indexOf(".");
+        if (dotIdx < 0) { return undefined; }
+        const degLen = dotIdx - 2;
+        const deg = parseInt(raw.slice(0, degLen));
+        const min = parseFloat(raw.slice(degLen));
+        let dec = deg + min / 60;
+        if (hem === "S" || hem === "W") { dec = -dec; }
+        return dec;
+    }
+    if (line.startsWith("$GPGGA")) {
+        // Primer: $GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47
+        const parts = line.split(",");
+        if (parts.length > 9) {
+            // Latitude
+            const latRaw = parts[2];
+            const latHem = parts[3];
+            const lonRaw = parts[4];
+            const lonHem = parts[5];
+            const altRaw = parts[9];
+            const x = nmeaToDec(latRaw, latHem);
+            const y = nmeaToDec(lonRaw, lonHem);
+            const z = parseFloat(altRaw);
+            return { x: x, y: y, z: z };
+        }
+    }
+    return {};
+}
 
 export interface GpsFeedProps {
     onCoords?: (coords: {x?: number, y?: number, z?: number}) => void;
