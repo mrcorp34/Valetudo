@@ -29,6 +29,15 @@ const ThreeCourtScene: React.FC<ThreeCourtSceneProps> = ({ showWave, calibPoints
         sceneRef.current = scene;
         cameraRef.current = camera;
 
+        // --- DODAJ SVETLA ---
+        // Ambient light for base color
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+        // Directional light for shading
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(0, 0, 1000);
+        scene.add(dirLight);
+
         // Renderer
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setClearColor(0x222222);
