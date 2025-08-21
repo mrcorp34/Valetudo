@@ -1,3 +1,43 @@
+// Helper za klasičan marker (kugla)
+function createClassicMarker(): THREE.Mesh {
+    const markerGeometry = new THREE.SphereGeometry(24, 32, 32);
+    const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xff2222 });
+    const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+    marker.position.set(0, 0, 0);
+    return marker;
+}
+
+// Helper za marker koji liči na robota za usisavanje
+function createRobotMarker(): THREE.Group {
+    const robotGroup = new THREE.Group();
+
+    // Osnova - disk
+    const baseGeometry = new THREE.CylinderGeometry(24, 24, 10, 32);
+    const baseMaterial = new THREE.MeshPhongMaterial({ color: 0x444444, shininess: 80 });
+    const baseMesh = new THREE.Mesh(baseGeometry, baseMaterial);
+    robotGroup.add(baseMesh);
+
+    // Gornji deo - manji cilindar
+    const topGeometry = new THREE.CylinderGeometry(18, 18, 6, 32);
+    const topMaterial = new THREE.MeshPhongMaterial({ color: 0x888888, shininess: 120 });
+    const topMesh = new THREE.Mesh(topGeometry, topMaterial);
+    topMesh.position.z = 8;
+    robotGroup.add(topMesh);
+
+    // "Oko" ili senzor napred
+    const eyeGeometry = new THREE.SphereGeometry(3, 16, 16);
+    const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0x22aaff });
+    const eyeMesh = new THREE.Mesh(eyeGeometry, eyeMaterial);
+    eyeMesh.position.set(18, 0, 8);
+    robotGroup.add(eyeMesh);
+
+    // Orijentacija (da "gleda" u +X)
+    robotGroup.rotation.x = Math.PI / 2;
+
+    robotGroup.position.set(0, 0, 0);
+    return robotGroup;
+}
+
 import React, { useRef, useEffect } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
@@ -14,7 +54,7 @@ const ThreeCourtScene: React.FC<ThreeCourtSceneProps> = ({ showWave, calibPoints
     const sceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
     const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-    const robotMarkerRef = useRef<THREE.Mesh | null>(null);
+    const robotMarkerRef = useRef<THREE.Object3D | null>(null);
     const controlsRef = useRef<OrbitControls | null>(null);
     const fieldMeshRef = useRef<THREE.Mesh | null>(null);
 
@@ -355,19 +395,17 @@ const ThreeCourtScene: React.FC<ThreeCourtSceneProps> = ({ showWave, calibPoints
         }
 
         // Dodaj ili ažuriraj marker
+        const useRobotMarker = true; // postavi na false za klasičnu kuglu
         if (calibPoints.length === 3 && lastCoords.x !== undefined && lastCoords.y !== undefined) {
             let marker = robotMarkerRef.current;
             if (!marker) {
-                const markerGeometry = new THREE.SphereGeometry(24, 32, 32);
-                const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xff2222 });
-                marker = new THREE.Mesh(markerGeometry, markerMaterial);
-                marker.position.set(0, 0, 100);
+                marker = useRobotMarker ? createRobotMarker() : createClassicMarker();
                 scene.add(marker);
                 robotMarkerRef.current = marker;
             }
             const pos = mapGpsToField(lastCoords);
             if (pos) {
-                marker.position.set(pos.x, pos.y, 100);
+                marker.position.set(pos.x, pos.y, 0);
             }
         } else {
             // Ukloni marker ako nema kalibracije
